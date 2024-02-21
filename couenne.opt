@@ -1,0 +1,6 @@
+allowable_gap 1
+allowable_fraction_gap 0.01
+time_limit 600
+problem_print_level 1
+nlp_log_level 0
+nlpheur_print_level 0
