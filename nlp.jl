@@ -1,9 +1,54 @@
 using JuMP, Ipopt
-using AmplNLWriter, Couenne_jll
+using AmplNLWriter, Couenne_jll, SHOT_jll, Bonmin_jll
 using Dates
 
 
 include("EV.jl")
+
+
+function compute_objective(a::AbstractMatrix{Float64}, EVs::EVData, ρ::AbstractVector{Float64}; 
+    Δt::Float64=1.0, β::Float64)
+    K, T = size(a)
+    c_obj = f_obj = 0.0
+    P = a .* EVs.Pmax
+    # first compute SoC
+    SoC = zeros(Float64, K, T)
+    ta_min = minimum(EVs.ta)
+    for t = 1:T
+        τ = t + ta_min - 1   # actual time without shifting
+        gt = zeros(K)
+        for k = 1:K
+            if EVs.ta[k] <= τ < EVs.td[k] # ev arrived
+                # update SoC
+                ΔSoC = a[k, t] * EVs.Pmax[k] * EVs.e[k] * Δt / EVs.C[k] 
+                if EVs.ta[k] == τ  # first step for ev
+                    SoC[k, t] = EVs.SoCa[k] + ΔSoC
+                else
+                    SoC[k, t] = SoC[k, t-1] + ΔSoC
+                end
+                # compute electricity cost
+                c_obj += a[k, t] * EVs.Pmax[k] * Δt * ρ[t]
+                # fairness related 
+                gt[k] = (EVs.SoCd[k] - SoC[k, t]) * EVs.C[k] / (EVs.Pmax[k] * EVs.e[k] * Δt) / (EVs.td[k] - τ)
+            end
+        end
+        gt_total = sum(gt)
+        Gt = zeros(K)
+        for k = 1:K
+            if gt[k] > 0
+                Gt[k] = gt[k] / gt_total
+            end
+        end
+        Pt = a[:, t] .* EVs.Pmax
+        Pt_total = sum(Pt)
+        for k = 1:K
+            f_obj += abs(Pt[k] - Pt_total * Gt[k])
+        end
+    end
+    return (1 - β) * c_obj + β * f_obj
+end
+
+
 
 """
     build_model(EVs::EVData, ρ::AbstractVector{Float64}; Δt::Float64, β::Float64, Plim::Float64)
@@ -11,7 +56,7 @@ include("EV.jl")
 Build an optimization model for EV charging.
 The price vector `ρ` corresponds to time range [ta_min, td_max - 1] among all EVs.
 """
-function build_model(EVs::EVData, ρ::AbstractVector{Float64}; Δt::Float64, β::Float64, Plim::Float64)
+function build_model(EVs::EVData, ρ::AbstractVector{Float64}; Δt::Float64=1.0, β::Float64, Plim::Float64)
     all(td > ta for (ta, td) in zip(EVs.ta, EVs.td)) || error("Invalid time range")
     ta_min = minimum(EVs.ta)
     td_max = maximum(EVs.td)
@@ -87,6 +132,10 @@ function solve!(model::JuMP.Model; optimizer::Symbol=:Couenne)
         set_attribute(model, "acceptable_tol", 1e-4)
     elseif optimizer == :Couenne
         set_optimizer(model, () -> AmplNLWriter.Optimizer(Couenne_jll.amplexe))
+    elseif optimizer == :SHOT
+        set_optimizer(model, () -> AmplNLWriter.Optimizer(SHOT_jll.amplexe))
+    elseif optimizer == :Bonmin
+        set_optimizer(model, () -> AmplNLWriter.Optimizer(Bonmin_jll.amplexe))
     else
         error("Unsupported optimizer")
     end
@@ -103,32 +152,44 @@ function solve!(model::JuMP.Model; optimizer::Symbol=:Couenne)
 end
 
 
-function run(npz_file::String)
+function run(npz_file::String; optimizer::Symbol=:Couenne)
     EVs = EVData(npz_file)
     cfg = npzread(npz_file)
-    model = build_model(EVs, cfg["rho"]; Δt=cfg["delta_t"], β=cfg["b"], Plim=cfg["Plim"])
+    Δt=cfg["delta_t"]
+    β=cfg["b"]
+    ρ = cfg["rho"]
+    model = build_model(EVs, ρ; Δt, β, Plim=cfg["Plim"])
     try
-        solve!(model)
+        solve!(model; optimizer)
         # store results
         keys = ["a", "P", "g", "G", "SoC", "c_obj", "f_obj"]
         res = Dict{String, Union{Matrix{Float64}, Float64}}(k=>value.(model[Symbol(k)]) for k in keys)
         res["obj_value"] = objective_value(model)
-        target_npz_file = npz_file[1:end-4] * "-res.npz"
-        npzwrite(target_npz_file, res)
-        println("Optimization towards $npz_file finished!")
+        target_npz_file = npz_file[1:end-4] * "-res-$(optimizer).npz"
+        println("Optimization towards $npz_file finished! Checking feasibility...")
+        fr_dict = primal_feasibility_report(model, atol=1e-3)
+        if isempty(fr_dict)
+            println("Feasible solution found and written to $target_npz_file.")
+            npzwrite(target_npz_file, res)
+            println("Evaluate objective...")
+            eval_obj = compute_objective(res["a"], EVs, ρ; Δt, β)
+            println("opt_obj / eval_obj = $(res["obj_value"]) / $eval_obj")
+        else
+            println("Infeasible. $(length(fr_dict)) constraints violated.")
+        end
     catch e
         println("Unable to optimize $npz_file")
     end
 end
 
 
-function main(npz_files::AbstractVector{String})
+function main(npz_files::AbstractVector{String}; optimizer::Symbol=:Couenne)
     @show Threads.nthreads()        # number of threads available
     Threads.@threads for npz_file in npz_files
-        run(npz_file)
+        run(npz_file; optimizer)
     end
 end
 
 
 # process a list of input data in parallel
-main(["./data/EVDATA1.npz", "./data/EVDATA2.npz", "./data/EVDATA3.npz"])
+main(["./data/EVDATA50.npz"]; optimizer=:Ipopt)

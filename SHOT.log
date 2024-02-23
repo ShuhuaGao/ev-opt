@@ -1,0 +1,91 @@
+
+- Supporting Hyperplane Optimization Toolkit (SHOT) -------------------------------------------------------------------
+
+ Andreas Lundell and Jan Kronqvist, Åbo Akademi University, Finland.
+ See documentation for full list of contributors and utilized software libraries.
+
+ Version: 1.1.0. Git hash: 11fda1ec-dirty. Released: Jan  1 1970.
+
+ For more information visit https://shotsolver.dev
+
+- Modeling system -----------------------------------------------------------------------------------------------------
+
+ Modeling system:            AMPL
+ Problem read from file:     C:\Users\lenovo\AppData\Local\Temp\jl_TmCoA7\model.nl
+
+- Bound tightening ----------------------------------------------------------------------------------------------------
+
+ Performing bound tightening on original problem.
+  - Bounds for 0 variables tightened in 0.00 s and 1 passes.
+  - Objective bounds are: [-1.79769e+308, 1.79769e+308]
+
+ Performing bound tightening on reformulated problem.
+  - Bounds for 0 variables tightened in 0.32 s and 1 passes.
+  - Objective bounds are: [0, 3181.19]
+
+- Problem instance ----------------------------------------------------------------------------------------------------
+
+                                    Original             Reformulated
+
+ Problem classification:            NLP, nonconvex       NLP, nonconvex
+
+ Objective function direction:      minimize             minimize
+ Objective function type:           nonlinear, nonconvex nonlinear
+
+ Number of constraints:             764                  1810
+  - linear:                         764                  764
+  - nonconvex nonlinear:            0                    1046
+
+ Number of variables:               700                  1223
+  - real:                           700                  1223
+  - nonlinear:                      515                  1034
+
+ Number of transformations performed:                    523
+  - absolute value reformulation:                        523
+
+- Options -------------------------------------------------------------------------------------------------------------
+
+ No options file specified.
+
+ Options specified:
+
+  - Dual.ESH.InteriorPoint.CuttingPlane.IterationLimit = 50
+  - Dual.HyperplaneCuts.ConstraintSelectionFactor = 1
+  - Dual.HyperplaneCuts.UseIntegerCuts = true
+  - Dual.MIP.Presolve.UpdateObtainedBounds = false
+  - Dual.MIP.SolutionLimit.Initial = 2147483647
+  - Dual.Relaxation.Use = false
+  - Dual.TreeStrategy = 0
+  - Model.BoundTightening.FeasibilityBased.TimeLimit = 5
+  - Model.Reformulation.Quadratics.Strategy = 0
+  - Output.OutputDirectory = 0
+  - Primal.FixedInteger.CallStrategy = 0
+  - Primal.FixedInteger.OnlyUniqueIntegerCombinations = false
+  - Primal.FixedInteger.Source = 0
+  - Primal.Tolerance.TrustLinearConstraintValues = false
+
+ Dual strategy:              NLP version
+  - cut algorithm:           ESH
+  - solver:                  Cbc 2.10.5
+
+ Primal NLP solver:          none
+
+
+- Interior point search -----------------------------------------------------------------------------------------------
+
+ Strategy selected:          cutting plane minimax
+
+    Iteration      |  Time  |    Cuts     |     Objective value     |  Objective diff.   
+     #: type       |  tot.  |   + | tot.  |    problem | line srch  |    abs. | rel.    
+---------------------------------------------------------------------------------------
+     1: LP          229.51                     -1e+12 | -1e+12          inf. | inf.    
+
+ Maximum deviation in interior point is too large: 26.710
+
+ No interior point found!                            
+
+- Main iteration step -------------------------------------------------------------------------------------------------
+
+    Iteration     |  Time  |  Dual cuts  |     Objective value     |   Objective gap   |     Current solution
+     #: type      |  tot.  |   + | tot.  |       dual | primal     |    abs. | rel.    |    obj.fn. | max.err.
+------------------------------------------------------------------------------

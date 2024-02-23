@@ -4,5 +4,6 @@
         "Ipopt",
         "Plim",
         "Pmax"
-    ]
+    ],
+    "julia.environmentPath": "e:\\GitHub\\ev-opt"
 }
