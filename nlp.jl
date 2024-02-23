@@ -169,13 +169,13 @@ function run(npz_file::String; optimizer::Symbol=:Couenne)
         println("Optimization towards $npz_file finished! Checking feasibility...")
         fr_dict = primal_feasibility_report(model, atol=1e-3)
         if isempty(fr_dict)
-            println("Feasible solution found and written to $target_npz_file.")
+            printstyled("Feasible solution found and written to $target_npz_file.\n"; color=:green)
             npzwrite(target_npz_file, res)
             println("Evaluate objective...")
             eval_obj = compute_objective(res["a"], EVs, ρ; Δt, β)
-            println("opt_obj / eval_obj = $(res["obj_value"]) / $eval_obj")
+            println("opt_obj / eval_obj = $(res["obj_value"]) / $eval_obj. Difference = $(res["obj_value"] - eval_obj)")
         else
-            println("Infeasible. $(length(fr_dict)) constraints violated.")
+            printstyled("Infeasible. $(length(fr_dict)) constraints violated.\n"; color=:red)
         end
     catch e
         println("Unable to optimize $npz_file")
