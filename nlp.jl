@@ -5,44 +5,45 @@ using Dates
 
 include("EV.jl")
 
+"""
+    compute_objective
 
+Given a decision vector `a`, compute the objective value of the optimization problem.
+"""
 function compute_objective(a::AbstractMatrix{Float64}, EVs::EVData, ρ::AbstractVector{Float64}; 
     Δt::Float64=1.0, β::Float64)
     K, T = size(a)
     c_obj = f_obj = 0.0
     P = a .* EVs.Pmax
     # first compute SoC
-    SoC = zeros(Float64, K, T)
+    SoC = zeros(Float64, K, T+1)
+    SoC[:, 1] .= EVs.SoCa
+    for t = 1:T, k = 1:K
+        # if EV does not stay here, then a must be zero and will affect the result
+        ΔSoC = P[k, t] * EVs.e[k] * Δt / EVs.C[k] 
+        SoC[k, t+1] = SoC[k, t] + ΔSoC
+        c_obj += P[k, t] * Δt * ρ[t]
+    end
+
     ta_min = minimum(EVs.ta)
     for t = 1:T
         τ = t + ta_min - 1   # actual time without shifting
         gt = zeros(K)
         for k = 1:K
-            if EVs.ta[k] <= τ < EVs.td[k] # ev arrived
-                # update SoC
-                ΔSoC = a[k, t] * EVs.Pmax[k] * EVs.e[k] * Δt / EVs.C[k] 
-                if EVs.ta[k] == τ  # first step for ev
-                    SoC[k, t] = EVs.SoCa[k] + ΔSoC
-                else
-                    SoC[k, t] = SoC[k, t-1] + ΔSoC
-                end
-                # compute electricity cost
-                c_obj += a[k, t] * EVs.Pmax[k] * Δt * ρ[t]
-                # fairness related 
+            if EVs.ta[k] <= τ < EVs.td[k] # ev arrived and not leaved
                 gt[k] = (EVs.SoCd[k] - SoC[k, t]) * EVs.C[k] / (EVs.Pmax[k] * EVs.e[k] * Δt) / (EVs.td[k] - τ)
             end
         end
         gt_total = sum(gt)
         Gt = zeros(K)
-        for k = 1:K
-            if gt[k] > 0
+        if gt_total > 0
+            for k = 1:K
                 Gt[k] = gt[k] / gt_total
             end
         end
-        Pt = a[:, t] .* EVs.Pmax
-        Pt_total = sum(Pt)
+        Pt_total = sum(P[:, t])
         for k = 1:K
-            f_obj += abs(Pt[k] - Pt_total * Gt[k])
+            f_obj += abs(P[k, t] - Pt_total * Gt[k])
         end
     end
     return (1 - β) * c_obj + β * f_obj
@@ -81,17 +82,21 @@ function build_model(EVs::EVData, ρ::AbstractVector{Float64}; Δt::Float64=1.0,
         fix.(a[k, EVs.td[k]:T], 0; force=true)
     end
 
-    # SoC[k, t] is the state of charge of EV k at the end of time step t
-    @expression(model, SoC[1:K, 1:T], zero(AffExpr))
+    # SoC[k, t] is the state of charge of EV k at the **beginning** of time step t
+    @expression(model, SoC[1:K, 1:T+1], zero(AffExpr))
     # SoC dynamics
-    SoC[:, 1] .= @expression(model, EVs.SoCa .+ P[:, 1] .* EVs.e .* Δt ./ EVs.C)
-    for t = 2:T
-        SoC[:, t] .= @expression(model, SoC[:, t-1] .+ P[:, t] .* EVs.e .* Δt ./ EVs.C)
+    SoC[:, 1] .= EVs.SoCa
+    for t = 1:T
+        SoC[:, t+1] .= @expression(model, SoC[:, t] .+ P[:, t] .* EVs.e .* Δt ./ EVs.C)
     end
+    # SoC[:, 1] .= @expression(model, EVs.SoCa .+ P[:, 1] .* EVs.e .* Δt ./ EVs.C)
+    # for t = 2:T
+    #     SoC[:, t] .= @expression(model, SoC[:, t-1] .+ P[:, t] .* EVs.e .* Δt ./ EVs.C)
+    # end
     # SoC constraints
     @constraint(model, EVs.SoCmin .<= SoC .<= EVs.SoCmax)
     for k = 1:K
-        @constraint(model, SoC[k, EVs.td[k] - 1] == EVs.SoCd[k])
+        @constraint(model, SoC[k, EVs.td[k]] == EVs.SoCd[k])
     end
 
     # station power limit
@@ -105,7 +110,7 @@ function build_model(EVs::EVData, ρ::AbstractVector{Float64}; Δt::Float64=1.0,
         ts = EVs.ta[k]:EVs.td[k]-1  # valid time range for EV k 
         g[k, ts] .= EVs.C[k] .* (EVs.SoCd[k] .- SoC[k, ts]) ./ (EVs.Pmax[k] .* Δt .* EVs.e[k])  ./ (EVs.td[k] .- ts)
     end
-    @expression(model, G, g ./ (sum(g; dims=1) .+ 1e-6))  # K × T, 1e-8 avoids zero division 
+    @expression(model, G, g ./ (sum(g; dims=1) .+ 1e-8))  # K × T, 1e-8 avoids zero division 
     @expression(model, f_obj, abs.(P .- sum(P; dims=1) .* G))  # K × T
 
     # total objective: weighted sum 
