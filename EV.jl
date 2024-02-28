@@ -16,8 +16,6 @@ end
 
 function EVData(npz_file::String)
     data = NPZ.npzread(npz_file)
-    for key in ["rho", "delta_t", "b", "Plim"]
-        delete!(data, key)
-    end
-    return EVData(; Dict(Symbol(k)=>v for (k, v) in data)...)
+    input_dict = Dict(k=>data[string(k)] for k in fieldnames(EVData))
+    return EVData(; input_dict...)
 end

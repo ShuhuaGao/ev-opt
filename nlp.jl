@@ -1,5 +1,6 @@
 using JuMP, Ipopt
 using AmplNLWriter, Couenne_jll, SHOT_jll, Bonmin_jll
+using KNITRO
 using Dates
 
 
@@ -141,6 +142,17 @@ function solve!(model::JuMP.Model; optimizer::Symbol=:Couenne)
         set_optimizer(model, () -> AmplNLWriter.Optimizer(SHOT_jll.amplexe))
     elseif optimizer == :Bonmin
         set_optimizer(model, () -> AmplNLWriter.Optimizer(Bonmin_jll.amplexe))
+    elseif optimizer == :KNITRO
+        @show KNITRO.has_knitro()
+        set_optimizer(model, () -> AmplNLWriter.Optimizer(KNITRO.amplexe, 
+            ["alg=0",                   # select optimization algorithm, 0: auto 
+             "maxit=200000",            # max iterations
+             "maxtime_real=6000",       # max time
+             "opttol=5e-2",             # optimality relative tolerance
+             "opttol_abs=10",           # optimality absolute tolerance
+             "feastol=1e-3",            # feasibility relative tolerance
+             "feastol_abs=1e-2"         # feasibility absolute tolerance      
+             ]))
     else
         error("Unsupported optimizer")
     end
@@ -161,7 +173,7 @@ function run(npz_file::String; optimizer::Symbol=:Couenne)
     EVs = EVData(npz_file)
     cfg = npzread(npz_file)
     Δt=cfg["delta_t"]
-    β=cfg["b"]
+    β=cfg["beta"]
     ρ = cfg["rho"]
     model = build_model(EVs, ρ; Δt, β, Plim=cfg["Plim"])
     try
@@ -183,7 +195,7 @@ function run(npz_file::String; optimizer::Symbol=:Couenne)
             printstyled("Infeasible. $(length(fr_dict)) constraints violated.\n"; color=:red)
         end
     catch e
-        println("Unable to optimize $npz_file")
+        println("Unable to optimize $npz_file ! Error: $e")
     end
 end
 
@@ -197,4 +209,4 @@ end
 
 
 # process a list of input data in parallel
-main(["./data/EVDATA50.npz"]; optimizer=:Ipopt)
+main(["./data/EVDATA-t0.25-b0.1.npz"]; optimizer=:KNITRO)

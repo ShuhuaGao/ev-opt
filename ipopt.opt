@@ -1,2 +1,7 @@
-print_level 1
-max_cpu_time 300
+print_level 3
+max_cpu_time 3000
+check_derivatives_for_naninf yes
+tol 1e-3
+compl_inf_tol 1e-2
+constr_viol_tol 1e-2
+dual_inf_tol 1
