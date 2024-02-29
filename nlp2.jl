@@ -1,3 +1,5 @@
+# fairness is squared as the objective item
+
 using JuMP, Ipopt
 using AmplNLWriter, Couenne_jll, SHOT_jll, Bonmin_jll
 using KNITRO
@@ -44,7 +46,7 @@ function compute_objective(a::AbstractMatrix{Float64}, EVs::EVData, ρ::Abstract
         end
         Pt_total = sum(P[:, t])
         for k = 1:K
-            f_obj += abs(P[k, t] - Pt_total * Gt[k])
+            f_obj += (P[k, t] - Pt_total * Gt[k])^2
         end
     end
     return (1 - β) * c_obj + β * f_obj
@@ -112,7 +114,7 @@ function build_model(EVs::EVData, ρ::AbstractVector{Float64}; Δt::Float64=1.0,
         g[k, ts] .= EVs.C[k] .* (EVs.SoCd[k] .- SoC[k, ts]) ./ (EVs.Pmax[k] .* Δt .* EVs.e[k])  ./ (EVs.td[k] .- ts)
     end
     @expression(model, G, g ./ (sum(g; dims=1) .+ 1e-8))  # K × T, 1e-8 avoids zero division 
-    @expression(model, f_obj, abs.(P .- sum(P; dims=1) .* G))  # K × T
+    @expression(model, f_obj, (P .- sum(P; dims=1) .* G).^2)  # K × T
 
     # total objective: weighted sum 
     @objective(model, Min, sum((1 - β) .* c_obj .+ β .* f_obj))
@@ -186,7 +188,7 @@ function run(npz_file::String; optimizer::Symbol=:Couenne)
         keys = ["a", "P", "g", "G", "SoC", "c_obj", "f_obj"]
         res = Dict{String, Union{Matrix{Float64}, Float64}}(k=>value.(model[Symbol(k)]) for k in keys)
         res["obj_value"] = objective_value(model)
-        target_npz_file = npz_file[1:end-4] * "-res-$(optimizer).npz"
+        target_npz_file = npz_file[1:end-4] * "-res-$(optimizer)-2.npz"
         println("Optimization towards $npz_file finished! Checking feasibility...")
         fr_dict = primal_feasibility_report(model, atol=1e-3)
         if isempty(fr_dict)
@@ -213,4 +215,4 @@ end
 
 
 # process a list of input data in parallel
-main(["./data/EVDATA-t0.25-b0.05.npz"]; optimizer=:KNITRO)
+main(["./data/EVDATA-t0.25-b0.1.npz"]; optimizer=:KNITRO)

@@ -1,5 +1,9 @@
+# reformulate the EV charging problem into a quadratically constrained programming problem with 
+# a linear objective
+
 using JuMP, Ipopt
 using AmplNLWriter, Couenne_jll, SHOT_jll, Bonmin_jll
+using Gurobi
 using KNITRO
 using Dates
 
@@ -44,7 +48,7 @@ function compute_objective(a::AbstractMatrix{Float64}, EVs::EVData, ρ::Abstract
         end
         Pt_total = sum(P[:, t])
         for k = 1:K
-            f_obj += abs(P[k, t] - Pt_total * Gt[k])
+            f_obj += (P[k, t] - Pt_total * Gt[k])^2
         end
     end
     return (1 - β) * c_obj + β * f_obj
@@ -90,10 +94,6 @@ function build_model(EVs::EVData, ρ::AbstractVector{Float64}; Δt::Float64=1.0,
     for t = 1:T
         SoC[:, t+1] .= @expression(model, SoC[:, t] .+ P[:, t] .* EVs.e .* Δt ./ EVs.C)
     end
-    # SoC[:, 1] .= @expression(model, EVs.SoCa .+ P[:, 1] .* EVs.e .* Δt ./ EVs.C)
-    # for t = 2:T
-    #     SoC[:, t] .= @expression(model, SoC[:, t-1] .+ P[:, t] .* EVs.e .* Δt ./ EVs.C)
-    # end
     # SoC constraints
     @constraint(model, EVs.SoCmin .<= SoC .<= EVs.SoCmax)
     for k = 1:K
@@ -104,18 +104,29 @@ function build_model(EVs::EVData, ρ::AbstractVector{Float64}; Δt::Float64=1.0,
     @constraint(model, sum(P; dims=1) .<= Plim)
 
     # cost objective
-    @expression(model, c_obj, ρ' .* P .* Δt)     # K × T
+    @expression(model, c_obj, ρ' .* P .* Δt)     # K × T, linear
     # fairness objective
     @expression(model, g[1:K, 1:T], zero(AffExpr))
     for k = 1:K
         ts = EVs.ta[k]:EVs.td[k]-1  # valid time range for EV k 
         g[k, ts] .= EVs.C[k] .* (EVs.SoCd[k] .- SoC[k, ts]) ./ (EVs.Pmax[k] .* Δt .* EVs.e[k])  ./ (EVs.td[k] .- ts)
     end
-    @expression(model, G, g ./ (sum(g; dims=1) .+ 1e-8))  # K × T, 1e-8 avoids zero division 
-    @expression(model, f_obj, abs.(P .- sum(P; dims=1) .* G))  # K × T
+    @expression(model, g_total, sum(g; dims=1)) # 1 × T 
+
+    @variable(model, G[1:K, 1:T] >= 0)
+    @constraint(model, G .* g_total .== g)
+    @constraint(model, G .<= g_total)
+
+    # auxiliary variable `s` to handle the fraction-square in objective 
+    @variable(model, s[1:K, 1:T])
+    @expression(model, P_total, sum(P; dims=1))
+    @constraint(model, s .== P .- P_total .* G)
+    
+    # @constraint(model, -f_obj .<= P .- P_total .* G)
+    # @constraint(model, P .- P_total .* G .<= f_obj)
 
     # total objective: weighted sum 
-    @objective(model, Min, sum((1 - β) .* c_obj .+ β .* f_obj))
+    @objective(model, Min, sum((1 - β) .* c_obj .+ β .* s .^2))
     
     return model
 end
@@ -157,6 +168,14 @@ function solve!(model::JuMP.Model; optimizer::Symbol=:Couenne)
              "ms_maxsolves=10",
              "ms_outsub=1"     
              ]))
+    elseif optimizer == :Gurobi
+        set_optimizer(model, Gurobi.Optimizer)
+        set_optimizer_attribute(model, "OutputFlag", 1)
+        set_optimizer_attribute(model, "LogToConsole", true)
+        set_optimizer_attribute(model, "MIPGap", 5e-2)
+        set_optimizer_attribute(model, "TimeLimit", 300)
+        set_optimizer_attribute(model, "MIQCPMethod", 0)
+        set_optimizer_attribute(model, "ImproveStartTime", 100)
     else
         error("Unsupported optimizer")
     end
@@ -213,4 +232,4 @@ end
 
 
 # process a list of input data in parallel
-main(["./data/EVDATA-t0.25-b0.05.npz"]; optimizer=:KNITRO)
+main(["./data/EVDATA-t0.25-b0.1.npz"]; optimizer=:Gurobi)
