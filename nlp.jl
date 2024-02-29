@@ -151,7 +151,11 @@ function solve!(model::JuMP.Model; optimizer::Symbol=:Couenne)
              "opttol=5e-2",             # optimality relative tolerance
              "opttol_abs=10",           # optimality absolute tolerance
              "feastol=1e-3",            # feasibility relative tolerance
-             "feastol_abs=1e-2"         # feasibility absolute tolerance      
+             "feastol_abs=1e-2",         # feasibility absolute tolerance 
+             "outlev=1",
+             "ms_enable=1",
+             "ms_maxsolves=10",
+             "ms_outsub=1"     
              ]))
     else
         error("Unsupported optimizer")
@@ -209,4 +213,4 @@ end
 
 
 # process a list of input data in parallel
-main(["./data/EVDATA-t0.25-b0.1.npz"]; optimizer=:KNITRO)
+main(["./data/EVDATA-t0.25-b0.0.npz"]; optimizer=:KNITRO)
